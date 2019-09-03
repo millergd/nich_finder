@@ -4,10 +4,14 @@ from bs4 import BeautifulSoup
 import re
 import os
 from sklearn import feature_extraction
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction import text
+from sklearn.metrics.pairwise import cosine_similarity
+
 
 class tfidf_niche_finder(object):
-    
-    def __init__():
+
+    def __init__(self):
 
         self.custom_stop_words = [
             'logo',
@@ -28,9 +32,9 @@ class tfidf_niche_finder(object):
             'women'
         ]
     
-    def load_documents(input_file):
+    def load_documents(self, input_file):
         
-        self.document_data = []
+        self.document_data_matrix = []
         self.document_data_by_asin = {}
         
         def _clean_document(document):
@@ -68,16 +72,14 @@ class tfidf_niche_finder(object):
                 if len(line.replace("\"","").split('|')) == 11:
                     for item in line.replace("\"","").split('|'):
                         data[item.split(':',1)[0]] = item.split(':',1)[1]
-                    data['document'] = clean_string(data['title']) # + ". " + data['description'])
+                    data['document'] = _clean_document(data['title']) # + ". " + data['description'])
 
                     # Keep track of document data by asin
-                    if data['asin'] not in self.document_data_dict:
-                        self.document_data_dict[data['asin']] = data
-                        self.document_data.append(data)
-                    
-    
+                    if data['asin'] not in self.document_data_by_asin:
+                        self.document_data_by_asin[data['asin']] = data
+                        self.document_data_matrix.append(data)
 
-    def vectorize_documents():
+    def vectorize_documents(self):
 
         def tokenize_and_stem(text):
             # first tokenize by sentence, then by word to ensure that punctuation is caught as it's own token
@@ -89,7 +91,6 @@ class tfidf_niche_finder(object):
                     filtered_tokens.append(token)
             stems = [stemmer.stem(t) for t in filtered_tokens]
             return stems
-
 
         def tokenize_only(text):
             # first tokenize by sentence, then by word to ensure that punctuation is caught as it's own token
@@ -104,18 +105,20 @@ class tfidf_niche_finder(object):
         stemmer = SnowballStemmer("english")
         
         stop_words = text.ENGLISH_STOP_WORDS.union(self.custom_stop_words)
-        #print(stop_words)
+        # print(stop_words)
 
         tfidf_vectorizer = TfidfVectorizer(max_df=0.02, max_features=10000000,
-                                        min_df=0, stop_words=my_stop_words,
-                                        use_idf=True, tokenizer=tokenize_and_stem, ngram_range=(1,3))
+                                           min_df=0, stop_words=stop_words,
+                                           use_idf=True, tokenizer=tokenize_and_stem, ngram_range=(1, 3))
+        # print(tfidf_vectorizer.get_stop_words())
 
-        %time self.tfidf_matrix = tfidf_vectorizer.fit_transform([document['document'] for document in self.document_data])
-        #print(tfidf_matrix[0])
-        #print(tfidf_matrix.shape)
-        #print(tfidf_vectorizer.get_feature_names())
+        self.tfidf_matrix = tfidf_vectorizer.fit_transform([document['document'] for document in self.document_data_matrix])
+        # print(self.tfidf_matrix[0])
+        # print(self.tfidf_matrix.shape)
+        self.feature_names = tfidf_vectorizer.get_feature_names()
 
-    def cluster_documents(similarity_threshold = 0.2):
+
+    def cluster_documents(self, similarity_threshold=0.2):
         
         self.niches = {}
 
@@ -149,14 +152,14 @@ class tfidf_niche_finder(object):
                         # print(float(len(niches[doc_vector_index]['similar_docs'])))
                         # print(doc_vector_index)
                         # print(niches[doc_vector_index]['similar_docs'])
-                        # print(document_data[doc_vector_index]['document'])
+                        # print(document_data_matrix[doc_vector_index]['document'])
                         # print(float(len(niches[similar_doc])))
                         # print(similar_doc)
                         # print(niches[similar_doc]['similar_docs'])
-                        # print(document_data[similar_doc]['document'])
+                        # print(document_data_matrix[similar_doc]['document'])
                         # for item in niches[similar_doc]:
                         #     print(item)
-                        #     print(document_data[item]['document'])
+                        #     print(document_data_matrix[item]['document'])
 
                         # Consume the smaller niche (probably want to consume larger niche instead)
                         if len(niches[doc_vector_index]['similar_docs']) < len(niches[similar_doc]['similar_docs']):
@@ -164,19 +167,19 @@ class tfidf_niche_finder(object):
                         else:
                             niches[similar_doc]['consumed'] = True
     
-    def get_hot_niches():
+    def get_hot_niches(self):
         
         def analyze_niche(niche):
             total_sales_rank = 0
             num_sales_ranks = 0
             for document in niche['similar_docs']:
-                if document_data[document]['salesRank'] != "NA":
+                if self.document_data_matrix[document]['salesRank'] != "NA":
                     num_sales_ranks += 1
-                    total_sales_rank += int(document_data[document]['salesRank'])
-                    if 'best_sales_rank' in niche and int(document_data[document]['salesRank']) < int(niche['best_sales_rank']):
-                        niche['best_sales_rank'] = document_data[document]['salesRank']
+                    total_sales_rank += int(self.document_data_matrix[document]['salesRank'])
+                    if 'best_sales_rank' in niche and int(self.document_data_matrix[document]['salesRank']) < int(niche['best_sales_rank']):
+                        niche['best_sales_rank'] = self.document_data_matrix[document]['salesRank']
                     elif 'best_sales_rank' not in niche:
-                        niche['best_sales_rank'] = document_data[document]['salesRank']
+                        niche['best_sales_rank'] = self.document_data_matrix[document]['salesRank']
                         
             niche['percent_sales_ranks'] = float(num_sales_ranks) / float(len(niche['similar_docs']))
             if num_sales_ranks > 0:
@@ -210,23 +213,33 @@ class tfidf_niche_finder(object):
                     f.write("average sales rank: " + str(round(niches[niche]['average_sales_rank'],2)) + "\n")
                     f.write("best sales rank: " + str(niches[niche]['best_sales_rank']) + "\n")
                     for document in niches[niche]['similar_docs']:
-                        f.write(document_data[document]['asin'] + ', ')
+                        f.write(document_data_matrix[document]['asin'] + ', ')
                     f.write("\n")
                     for document in niches[niche]['similar_docs']:
-                        f.write(document_data[document]['document'] + "\n")
+                        f.write(document_data_matrix[document]['document'] + "\n")
                     f.write("\n")
+
+    def print_document_info(self, document_index):
+        print("DOCUMENT INDEX {}: {}".format(document_index, self.document_data_matrix[document_index]['document']))
+
+        if self.tfidf_matrix is not None and self.feature_names is not None:
+            coo = self.tfidf_matrix[document_index].tocoo()
+            for feature_index, feature in enumerate(coo.col):
+                print("{} ({})".format(self.feature_names[feature], coo.data[feature_index]))
 
 if __name__ == "__main__":
 
     niche_finder = tfidf_niche_finder()
 
     niche_finder.load_documents('shirts_newest_nt')
+    print(niche_finder.document_data_matrix[0:1])
 
     niche_finder.vectorize_documents()
+    niche_finder.print_document_info(0)
 
-    niche_finder.cluster_documents()
+    # niche_finder.cluster_documents()
 
-    niche_finder.get_hot_niches()
+    # niche_finder.get_hot_niches()
 
 
 
