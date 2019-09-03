@@ -1,7 +1,8 @@
 logo
 shirt
 tshirt
-vintage
+vintag
+retro
 movie
 officially
 licensed
@@ -10,3 +11,6 @@ offici
 licens
 graphic
 artwork
+gift
+men
+women
